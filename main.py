@@ -16,7 +16,7 @@ if not api_key:
 os.environ["OPENAI_API_KEY"] = api_key
 
 host = os.getenv("SERVER_HOST")
-port = os.getenv("SERVER_PORT")
+port = int(os.getenv("SERVER_PORT"))
 
 # ✅ 2개의 LLM 모델 설정
 model_1 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 적합도 평가
@@ -105,4 +105,4 @@ async def validate_resume(request: ResumeRequest):
 
 # ✅ 서버 실행 (다른 컴퓨터에서 접속 가능하도록 host와 port 지정)
 if __name__ == "__main__":
-    uvicorn.run("main:app", host=host, port=port, reload=True)
+    uvicorn.run("main:app", host=f"{host}", port=port, reload=True)
