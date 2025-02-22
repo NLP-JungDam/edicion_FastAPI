@@ -1,0 +1,10 @@
+bitsandbytes==0.45.2
+datasets==3.3.1
+langchain-community==0.3.18
+langchain-openai==0.3.6
+peft==0.14.0
+pip==24.0
+psycopg==3.2.4
+setuptools==65.5.0
+torchaudio==2.5.1+cu124
+torchvision==0.20.1+cu124
