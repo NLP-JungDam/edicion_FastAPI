@@ -16,22 +16,45 @@ if not api_key:
 os.environ["OPENAI_API_KEY"] = api_key
 
 host = os.getenv("SERVER_HOST")
-port = os.getenv("SERVER_PORT")
+port = int(os.getenv("SERVER_PORT"))
 
 # ✅ 2개의 LLM 모델 설정
 model_1 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 적합도 평가
 model_2 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 첨삭 or 공부법 제공
 model_3 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 인재유형 판단 모델
-
+model_4 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기업과 
+ 
 # ✅ 프롬프트 템플릿 정의
 prompt_1 = PromptTemplate(
     input_variables=["lorem", "jobObjective"],
     template="""
-    사용자가 입력한 자기소개서 내용이 {jobObjective}에 얼마나 적합한지 0~100% 사이의 점수로 평가하고,
-    아래 형식으로만 답변해.
-    
-    적합도 점수: <숫자>%
-    
+    당신은 아래의 10개 직업 카테고리에 대해, 주어진 자기소개서가 얼마나 적합한지 각각 0~100% 사이의 점수를 매기는 평가자입니다.
+
+    직업 카테고리:
+    1) 서비스업
+    2) 제조·화학
+    3) IT·웹·통신
+    4) 은행·금융업
+    5) 미디어·디자인
+    6) 교육업
+    7) 의료·제약·복지
+    8) 판매·유통
+    9) 건설업
+    10) 기관·협회
+
+    사용자가 선택한 직업 목표: {jobObjective}
+
+    평가 기준:
+    1. 먼저, 자기소개서가 {jobObjective} 직업에 얼마  나 적합한지 0~100% 사이의 점수로 평가하세요.
+    2. 그다음, 나머지 9개 직업 카테고리에 대해서도 각각 0~100% 점수를 매기세요.
+    3. 마지막으로, 그 9개 직업 카테고리 중 점수가 가장 높은 상위 2개 카테고리 이름과 점수를 추출하세요.
+    4. 아래 출력 형식에 맞춰 정확히 결과만 출력하고, 다른 설명이나 해설은 포함하지 마세요.
+
+    출력 형식(예시):
+    {jobObjective}: 85%
+    서비스업: 78%
+    IT·웹·통신: 72%
+
     평가할 자기소개서:
     {lorem}
     """
@@ -60,23 +83,83 @@ prompt_2_study = PromptTemplate(
     """
 )
 
-# ✅ 비동기 파이프라인 실행 함수로 변경
-async def process_pipeline(lorem, jobObjective):
-    # 1️⃣ 희망 직무 적합도 평가 (비동기 호출)
-    response_1_obj = await (prompt_1 | model_1).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
-    response_1 = response_1_obj.content
-    response_1 = response_1.replace("적합도 점수: ", "").strip("%")
-    print(f"🔹 적합도 평가 결과: {response_1}")
+prompt_3 = PromptTemplate(
+    input_variables=["resume"],
+    template="""
+    입력한 자기소개서가 어떤 인재 유형인지 판단해줘.
+    책임의식형, 도전정신형, 소통협력형, 창의성형 4가지 중에 하나로 판단해주면 돼.
+    책임의식형, 도전정신형, 소통협력형, 창의성형 중 하나로 출력해주면 돼
+    
+    자기소개서:
+    {resume}
+    
+    인재 유형:
+    """
+)
 
-    # 2️⃣ 적합도가 75% 이상이면 자기소개서 첨삭, 아니면 공부법 추천
-    if int(response_1) >= 75:
+prompt_4 = PromptTemplate(
+    input_variables=["lorem", "preferred"],
+    template="""
+    너가 고용주의 입장에서 기업의 인재상에 해당하는 문장과 자기소개서의 직무적인 유사도를 판단해야해.
+    0~100% 사이의 점수로 평가하면 돼.
+    숫자%만 출력해줘
+    그리고 같은 자기소개서와 기업 인재상을 입력하고 실행시키면 매번 다른 출력값이 나오는데 그러지 않게 일관적인 결과를 출력해줘
+    
+    자기소개서 :
+    {lorem}
+    
+    기업의 인재상 :
+    {preferred}
+    
+    일치도 점수: <숫자>%
+    """
+)
+
+async def process_pipeline(lorem, jobObjective):
+    response_1_obj = await (prompt_1 | model_1).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
+    response_1_text = response_1_obj.content
+    
+    scores = {}
+    for line in response_1_text.splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        category, score_part = line.split(":", 1)
+        score_str = score_part.strip().replace("%", "")
+        try:
+            score = int(score_str)
+            scores[category.strip()] = score
+        except ValueError:
+            continue
+
+    job_score = scores.get(jobObjective, 0)
+    
+    total_score = { jobObjective: job_score }
+    
+    other_scores = {cat: sc for cat, sc in scores.items() if cat != jobObjective}
+    top2 = sorted(other_scores.items(), key=lambda x: x[1], reverse=True)[:2]
+    for cat, sc in top2:
+        total_score[cat] = sc
+        
+    if job_score >= 75:
         response_2_obj = await (prompt_2_resume | model_2).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
         response_2 = response_2_obj.content
-        return {"ability": response_1, "resume": response_2, "lorem": lorem}
+        return {"ability": response_1_text, "resume": response_2, "lorem": lorem, "total_score": total_score}
+    
     else:
         response_2_obj = await (prompt_2_study | model_2).ainvoke({"jobObjective": jobObjective})
         response_2 = response_2_obj.content
-        return {"ability": response_1, "study": response_2, "lorem": lorem}
+        return {"ability": response_1_text, "study": response_2, "lorem": lorem, "total_score": total_score}
+    
+async def talentedType_pipeline(resume) :
+    response_3_obj = await (prompt_3 | model_3).ainvoke({"resume": resume})
+    response_3 = response_3_obj.content
+    return { "talentedType" : response_3 }
+
+async def similarity_pipeline(lorem, preferred) :
+    response_4_obj = await (prompt_4 | model_4).ainvoke({"lorem": lorem, "preferred": preferred})
+    response_4 = response_4_obj.content
+    return { "similarity" : response_4 }
 
 # ✅ FastAPI 설정
 app = FastAPI()
@@ -94,8 +177,14 @@ app.add_middleware(
 class ResumeRequest(BaseModel):
     lorem: str
     jobObjective: str
+    
+class TalentedTypeRequest(BaseModel):
+    resume: str
+    
+class SimilarityRequest(BaseModel):
+    lorem: str
+    preferred: str
 
-# 엔드포인트: 비동기 함수로 선언하여 await process_pipeline 사용
 @app.post("/user/validate_resume")
 async def validate_resume(request: ResumeRequest):
     print("서버가 정상적으로 연결됐습니다.")
@@ -103,6 +192,16 @@ async def validate_resume(request: ResumeRequest):
     jobObjective = request.jobObjective 
     return await process_pipeline(lorem, jobObjective)
 
-# ✅ 서버 실행 (다른 컴퓨터에서 접속 가능하도록 host와 port 지정)
+@app.post("/user/talentedType")
+async def talentedType(request: TalentedTypeRequest):
+    resume = request.resume
+    return await talentedType_pipeline(resume)
+
+@app.post("/employer/similarity")
+async def similarity(request: SimilarityRequest):
+    lorem = request.lorem
+    preferred = request.preferred
+    return await similarity_pipeline(lorem, preferred)
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host=host, port=port, reload=True)
+    uvicorn.run("main:app", host=f"{host}", port=port, reload=True)
