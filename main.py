@@ -38,7 +38,8 @@ base_prompt = PromptTemplate(
     자기소개 형태 판단:
     """
 )
-
+ 
+# 프롬프트 템플릿 정의
 prompt_1 = PromptTemplate(
     input_variables=["lorem", "jobObjective"],
     template="""
