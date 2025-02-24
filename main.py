@@ -9,22 +9,36 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-# ✅ OpenAI API 키 설정
+# OpenAI API 키 설정
 api_key = os.getenv("OPENAI_API_KEY")  # 환경 변수에서 불러오기
 if not api_key:
-    raise ValueError("🚨 OpenAI API 키가 설정되지 않았습니다. 환경 변수에 OPENAI_API_KEY를 설정하세요.")
+    raise ValueError("OpenAI API 키가 설정되지 않았습니다. 환경 변수에 OPENAI_API_KEY를 설정하세요.")
 os.environ["OPENAI_API_KEY"] = api_key
 
 host = os.getenv("SERVER_HOST")
 port = int(os.getenv("SERVER_PORT"))
 
-# ✅ 2개의 LLM 모델 설정
+base_model = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기본 모델
 model_1 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 적합도 평가
 model_2 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 첨삭 or 공부법 제공
 model_3 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 인재유형 판단 모델
-model_4 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기업과 
- 
-# ✅ 프롬프트 템플릿 정의
+model_4 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기업 인재상과 자기소개서 유사도 평가
+
+# 프롬프트 템플릿 정의
+base_prompt = PromptTemplate(
+    input_variables=["lorem"],
+    template="""
+    사용자가 입력한 텍스트가 자기소개 형태를 판단하는 AI야
+    소개의 형태를 갖추지 않고 다른 목적을 가지고 입력했을 시 False를 출력해주고
+    자기를 소개하는 글이다 라고 판단하면 True를 출력해줘
+    
+    사용자가 입력한 자기소개 :
+    {lorem}
+    
+    자기소개 형태 판단:
+    """
+)
+
 prompt_1 = PromptTemplate(
     input_variables=["lorem", "jobObjective"],
     template="""
@@ -116,6 +130,10 @@ prompt_4 = PromptTemplate(
 )
 
 async def process_pipeline(lorem, jobObjective):
+    checkResponse = await (base_prompt | base_model).ainvoke({"lorem" : lorem})
+    if checkResponse.content == "False" :
+        return { "verify" : False }
+    
     response_1_obj = await (prompt_1 | model_1).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
     response_1_text = response_1_obj.content
     
@@ -156,24 +174,23 @@ async def talentedType_pipeline(resume) :
     response_3 = response_3_obj.content
     return { "talentedType" : response_3 }
 
-async def similarity_pipeline(lorem, preferred) :
-    response_4_obj = await (prompt_4 | model_4).ainvoke({"lorem": lorem, "preferred": preferred})
-    response_4 = response_4_obj.content
-    return { "similarity" : response_4 }
+async def similarity_pipeline(lorem, jobs) :
+    for job_id, preferred in jobs.items():
+        response_4_obj = await (prompt_4 | model_4).ainvoke({"lorem": lorem, "preferred": preferred})
+        jobs[f"{job_id}"] = response_4_obj.content
+    return jobs # { job1_id : 70%, job2_id : 80% }
 
-# ✅ FastAPI 설정
 app = FastAPI()
 
 # CORS 미들웨어 추가 (외부 요청 허용)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 필요에 따라 특정 도메인만 허용 가능
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 요청 모델 정의
 class ResumeRequest(BaseModel):
     lorem: str
     jobObjective: str
@@ -183,7 +200,7 @@ class TalentedTypeRequest(BaseModel):
     
 class SimilarityRequest(BaseModel):
     lorem: str
-    preferred: str
+    jobs: dict
 
 @app.post("/user/validate_resume")
 async def validate_resume(request: ResumeRequest):
@@ -200,8 +217,9 @@ async def talentedType(request: TalentedTypeRequest):
 @app.post("/employer/similarity")
 async def similarity(request: SimilarityRequest):
     lorem = request.lorem
-    preferred = request.preferred
-    return await similarity_pipeline(lorem, preferred)
+    jobs = request.jobs
+    print("서버가 정상적으로 연결됐습니다.")
+    return await similarity_pipeline(lorem, jobs)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host=f"{host}", port=port, reload=True)
