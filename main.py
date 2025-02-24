@@ -18,10 +18,26 @@ os.environ["OPENAI_API_KEY"] = api_key
 host = os.getenv("SERVER_HOST")
 port = int(os.getenv("SERVER_PORT"))
 
+base_model = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기본 모델
 model_1 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 적합도 평가
 model_2 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 첨삭 or 공부법 제공
 model_3 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 인재유형 판단 모델
 model_4 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기업 인재상과 자기소개서 유사도 평가
+
+# 프롬프트 템플릿 정의
+base_prompt = PromptTemplate(
+    input_variables=["lorem"],
+    template="""
+    사용자가 입력한 텍스트가 자기소개 형태를 판단하는 AI야
+    소개의 형태를 갖추지 않고 다른 목적을 가지고 입력했을 시 False를 출력해주고
+    자기를 소개하는 글이다 라고 판단하면 True를 출력해줘
+    
+    사용자가 입력한 자기소개 :
+    {lorem}
+    
+    자기소개 형태 판단:
+    """
+)
  
 # 프롬프트 템플릿 정의
 prompt_1 = PromptTemplate(
@@ -115,6 +131,10 @@ prompt_4 = PromptTemplate(
 )
 
 async def process_pipeline(lorem, jobObjective):
+    checkResponse = await (base_prompt | base_model).ainvoke({"lorem" : lorem})
+    if checkResponse.content == "False" :
+        return { "verify" : False }
+    
     response_1_obj = await (prompt_1 | model_1).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
     response_1_text = response_1_obj.content
     
