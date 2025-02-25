@@ -1,5 +1,4 @@
 import os
-from langchain_community.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
 import uvicorn
@@ -9,7 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.document_loaders import TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import Chroma
+from langchain_chroma import Chroma
+from langchain_openai import ChatOpenAI
 from sklearn.metrics.pairwise import cosine_similarity
 
 load_dotenv()
@@ -43,77 +43,6 @@ competency_db = Chroma.from_documents(
 )
 
 ability_db = Chroma(persist_directory="./data/", embedding_function=embedding_3small)
-
-"""
-def preferred_vector_database(preferred_data = None) :
-    preferred_collection = Chroma(
-        persist_directory='./chroma_db',
-        embedding_function=OpenAIEmbeddings(),
-        collection_name="my_db2",
-    )
-
-    if preferred_collection.count() == 0 :
-        text_spliter = RecursiveCharacterTextSplitter(chunk_size=70, chunk_overlap=10)
-        
-        # 청크별 텍스트 저장 리스트 (preferred -> chunking Data)
-        chunked_docs = []
-        # 각 청크의 고유 ID 저장 리스트 (기업명)
-        chunked_ids = []
-        
-        for doc in preferred_data :
-            preferred = doc["preferred"]
-            chunks = text_spliter.split_text(preferred)
-            for idx, chunk in enumerate(chunks):
-                chunked_docs.append(chunk)
-                chunked_ids.append(f"{doc['businessNumber']}_chunk_{idx}")
-            
-        preferred_collection.add(
-            documents=chunked_docs,
-            ids=chunked_ids
-        )
-        
-    return preferred_collection
-        
-def compute_user_text_similarity(lorem: str, businessNumber: str, collection) -> float:
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=70, chunk_overlap=10)
-    user_chunks = text_splitter.split_text(lorem)
-    
-    similarity_scores = []
-    
-    # 각 청크마다 처리
-    for chunk in user_chunks:
-        # 해당 청크 임베딩 생성
-        chunk_embedding = embeddings.embed_query(chunk)
-        
-        # 벡터 DB에서 해당 청크에 대한 검색 (상위 5개 후보)
-        query_result = collection.query(
-            query_embeddings=[chunk_embedding],
-            n_results=5,
-            include=["ids", "distances"]
-        )
-        
-        filtered_results = [
-            (res_id, dist) 
-            for res_id, dist in zip(query_result["ids"][0], query_result["distances"][0])
-            if res_id.startswith(f"{businessNumber}_")
-        ]
-        
-        if filtered_results:
-            best_result = min(filtered_results, key=lambda x: x[1])
-            similarity_score = (1 - best_result[1]) * 100
-        else:
-            similarity_score = 0
-        
-        similarity_scores.append(similarity_score)
-    
-    if similarity_scores:
-        total_similarity = sum(similarity_scores) / len(similarity_scores)
-    else:
-        total_similarity = 0
-    return int(total_similarity)
-"""
-
-
 
 base_model = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기본 모델
 model_1 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 적합도 평가

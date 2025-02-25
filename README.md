@@ -38,3 +38,8 @@ pip와 python 버전 확인하는 법
 
 -   pip -V
     (저는 pip==24.0, python==3.11 입니다)
+
+Warning이 뜨는 경우
+
+-   pip install -U langchain_chroma langchain_openai
+이후 업데이트에 따라 document 확인해주셔야합니다!
