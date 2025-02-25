@@ -339,12 +339,6 @@ async def talentedType(request: TalentedTypeRequest):
 async def similarity(request: SimilarityRequest):
     lorem = request.lorem
     jobs = request.jobs
-    return await similarity_pipeline(lorem, jobs)
-
-@app.post("/employer/similarity")
-async def similarity(request: SimilarityRequest):
-    lorem = request.lorem
-    jobs = request.jobs
     chroma_scores = await calculate_cosine_similarity(lorem, jobs)
     gpt_scores = await similarity_pipeline(lorem, jobs)
     
@@ -353,7 +347,7 @@ async def similarity(request: SimilarityRequest):
         for job_id in request.jobs.keys()
     }
     
-    return { "final_scores": final_scores }
+    return {"chroma_scores": chroma_scores, "gpt_scores": gpt_scores, "fitness": final_scores}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host=f"{host}", port=port, reload=True)
