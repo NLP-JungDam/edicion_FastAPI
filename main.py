@@ -6,11 +6,16 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.document_loaders import TextLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores import Chroma
+from sklearn.metrics.pairwise import cosine_similarity
 
 load_dotenv()
 
 # OpenAI API 키 설정
-api_key = os.getenv("OPENAI_API_KEY")  # 환경 변수에서 불러오기
+api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OpenAI API 키가 설정되지 않았습니다. 환경 변수에 OPENAI_API_KEY를 설정하세요.")
 os.environ["OPENAI_API_KEY"] = api_key
@@ -18,28 +23,119 @@ os.environ["OPENAI_API_KEY"] = api_key
 host = os.getenv("SERVER_HOST")
 port = int(os.getenv("SERVER_PORT"))
 
+embedding_ada002 = OpenAIEmbeddings(model="text-embedding-ada-002", api_key=api_key)
+embedding_3small = OpenAIEmbeddings(model="text-embedding-3-small")
+
+text_splitter = RecursiveCharacterTextSplitter(chunk_size = 300, chunk_overlap=43)
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+file_path = os.path.join(current_dir, "ability.txt")
+
+loader = TextLoader(file_path, encoding="utf-8")
+
+split_doc = loader.load_and_split(text_splitter)
+
+splits = text_splitter.split_documents(split_doc)
+
+competency_db = Chroma.from_documents(
+    documents=split_doc, embedding=embedding_ada002, collection_name="competency", persist_directory='./data/'
+)
+
+ability_db = Chroma(persist_directory="./data/", embedding_function=embedding_3small)
+
+"""
+def preferred_vector_database(preferred_data = None) :
+    preferred_collection = Chroma(
+        persist_directory='./chroma_db',
+        embedding_function=OpenAIEmbeddings(),
+        collection_name="my_db2",
+    )
+
+    if preferred_collection.count() == 0 :
+        text_spliter = RecursiveCharacterTextSplitter(chunk_size=70, chunk_overlap=10)
+        
+        # 청크별 텍스트 저장 리스트 (preferred -> chunking Data)
+        chunked_docs = []
+        # 각 청크의 고유 ID 저장 리스트 (기업명)
+        chunked_ids = []
+        
+        for doc in preferred_data :
+            preferred = doc["preferred"]
+            chunks = text_spliter.split_text(preferred)
+            for idx, chunk in enumerate(chunks):
+                chunked_docs.append(chunk)
+                chunked_ids.append(f"{doc['businessNumber']}_chunk_{idx}")
+            
+        preferred_collection.add(
+            documents=chunked_docs,
+            ids=chunked_ids
+        )
+        
+    return preferred_collection
+        
+def compute_user_text_similarity(lorem: str, businessNumber: str, collection) -> float:
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=70, chunk_overlap=10)
+    user_chunks = text_splitter.split_text(lorem)
+    
+    similarity_scores = []
+    
+    # 각 청크마다 처리
+    for chunk in user_chunks:
+        # 해당 청크 임베딩 생성
+        chunk_embedding = embeddings.embed_query(chunk)
+        
+        # 벡터 DB에서 해당 청크에 대한 검색 (상위 5개 후보)
+        query_result = collection.query(
+            query_embeddings=[chunk_embedding],
+            n_results=5,
+            include=["ids", "distances"]
+        )
+        
+        filtered_results = [
+            (res_id, dist) 
+            for res_id, dist in zip(query_result["ids"][0], query_result["distances"][0])
+            if res_id.startswith(f"{businessNumber}_")
+        ]
+        
+        if filtered_results:
+            best_result = min(filtered_results, key=lambda x: x[1])
+            similarity_score = (1 - best_result[1]) * 100
+        else:
+            similarity_score = 0
+        
+        similarity_scores.append(similarity_score)
+    
+    if similarity_scores:
+        total_similarity = sum(similarity_scores) / len(similarity_scores)
+    else:
+        total_similarity = 0
+    return int(total_similarity)
+"""
+
+
+
 base_model = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기본 모델
 model_1 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 적합도 평가
 model_2 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 첨삭 or 공부법 제공
 model_3 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 인재유형 판단 모델
 model_4 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기업 인재상과 자기소개서 유사도 평가
 
-# 프롬프트 템플릿 정의
+# 프롬프트 템플릿 정의 객관성 판단 해야함.
 base_prompt = PromptTemplate(
     input_variables=["lorem"],
     template="""
-    사용자가 입력한 텍스트가 자기소개 형태를 판단하는 AI야
-    소개의 형태를 갖추지 않고 다른 목적을 가지고 입력했을 시 False를 출력해주고
-    자기를 소개하는 글이다 라고 판단하면 True를 출력해줘
+    사용자가 입력한 텍스트가 자기소개 형태인지를 판단하는 AI야
+    자기를 소개하는 글이라고 판단되는 확률을 0~100%사이로 출력해줘
+    숫자%로만 출력해줘
     
     사용자가 입력한 자기소개 :
     {lorem}
     
-    자기소개 형태 판단:
+    자기소개 형태 판단:<숫자>%
     """
 )
- 
-# 프롬프트 템플릿 정의
+
 prompt_1 = PromptTemplate(
     input_variables=["lorem", "jobObjective"],
     template="""
@@ -113,12 +209,11 @@ prompt_3 = PromptTemplate(
 )
 
 prompt_4 = PromptTemplate(
-    input_variables=["lorem", "preferred"],
+    input_variables=["lorem", "preferred", "job_id"],
     template="""
-    너가 고용주의 입장에서 기업의 인재상에 해당하는 문장과 자기소개서의 직무적인 유사도를 판단해야해.
+    너가 고용주의 입장에서 {job_id}기업의 인재상에 해당하는 문장과 자기소개서의 직무적인 유사도를 판단해야해.
     0~100% 사이의 점수로 평가하면 돼.
     숫자%만 출력해줘
-    그리고 같은 자기소개서와 기업 인재상을 입력하고 실행시키면 매번 다른 출력값이 나오는데 그러지 않게 일관적인 결과를 출력해줘
     
     자기소개서 :
     {lorem}
@@ -132,7 +227,9 @@ prompt_4 = PromptTemplate(
 
 async def process_pipeline(lorem, jobObjective):
     checkResponse = await (base_prompt | base_model).ainvoke({"lorem" : lorem})
-    if checkResponse.content == "False" :
+    content = checkResponse.content.strip().replace("%", "")
+    checkResponse = int(content)
+    if checkResponse <= 80  :
         return { "verify" : False }
     
     response_1_obj = await (prompt_1 | model_1).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
@@ -163,23 +260,43 @@ async def process_pipeline(lorem, jobObjective):
     if job_score >= 75:
         response_2_obj = await (prompt_2_resume | model_2).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
         response_2 = response_2_obj.content
+        
         return {"ability": response_1_text, "resume": response_2, "lorem": lorem, "total_score": total_score}
     
     else:
         response_2_obj = await (prompt_2_study | model_2).ainvoke({"jobObjective": jobObjective})
         response_2 = response_2_obj.content
-        return {"ability": response_1_text, "study": response_2, "lorem": lorem, "total_score": total_score}
+        vector_result = competency_db.similarity_search(f"{response_1_text}에 대한 역량을 키우기 위한 방법", k=1)
+        vector_result = "**최종적으로** : " + vector_result[0].page_content
+        return {"ability": response_1_text, "study": response_2 + vector_result, "lorem": lorem, "total_score": total_score}
     
 async def talentedType_pipeline(resume) :
     response_3_obj = await (prompt_3 | model_3).ainvoke({"resume": resume})
     response_3 = response_3_obj.content
     return { "talentedType" : response_3 }
 
-async def similarity_pipeline(lorem, jobs) :
+async def similarity_pipeline(lorem, jobs):
+    gpt_scores = {}
+
     for job_id, preferred in jobs.items():
-        response_4_obj = await (prompt_4 | model_4).ainvoke({"lorem": lorem, "preferred": preferred})
-        jobs[f"{job_id}"] = response_4_obj.content
-    return jobs # { job1_id : 70%, job2_id : 80% }
+        response_4_obj = await (prompt_4 | model_4).ainvoke({"lorem": lorem, "preferred": preferred,"job_id":job_id})
+        gpt_scores[f"{job_id}"] = float(response_4_obj.content.replace("%", ""))
+
+    return gpt_scores
+
+async def calculate_cosine_similarity(lorem, jobs):
+    lorem_embedding = embedding_3small.embed_query(lorem)
+    
+    similarity_scores = {}
+    
+    for job_id, preferred in jobs.items():
+        preferred_embedding = embedding_3small.embed_query(preferred)
+        
+        # 코사인 유사도 계산
+        similarity = cosine_similarity([lorem_embedding], [preferred_embedding])[0][0]
+        similarity_scores[job_id] = round(similarity * 100, 2)  # 확률(%) 변환
+    
+    return similarity_scores
 
 app = FastAPI()
 
@@ -202,10 +319,13 @@ class TalentedTypeRequest(BaseModel):
 class SimilarityRequest(BaseModel):
     lorem: str
     jobs: dict
+    
+class PreferrredRequest(BaseModel):
+    businessNumber: str
+    preferred: str
 
 @app.post("/user/validate_resume")
 async def validate_resume(request: ResumeRequest):
-    print("서버가 정상적으로 연결됐습니다.")
     lorem = request.lorem
     jobObjective = request.jobObjective 
     return await process_pipeline(lorem, jobObjective)
@@ -219,8 +339,21 @@ async def talentedType(request: TalentedTypeRequest):
 async def similarity(request: SimilarityRequest):
     lorem = request.lorem
     jobs = request.jobs
-    print("서버가 정상적으로 연결됐습니다.")
     return await similarity_pipeline(lorem, jobs)
+
+@app.post("/employer/similarity")
+async def similarity(request: SimilarityRequest):
+    lorem = request.lorem
+    jobs = request.jobs
+    chroma_scores = await calculate_cosine_similarity(lorem, jobs)
+    gpt_scores = await similarity_pipeline(lorem, jobs)
+    
+    final_scores = {
+        job_id: round((gpt_scores[job_id] + chroma_scores[job_id]) / 2, 2)
+        for job_id in request.jobs.keys()
+    }
+    
+    return { "final_scores": final_scores }
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host=f"{host}", port=port, reload=True)

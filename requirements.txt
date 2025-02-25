@@ -8,3 +8,4 @@ psycopg
 setuptools
 uvicorn
 fastapi
+scikit-learn
