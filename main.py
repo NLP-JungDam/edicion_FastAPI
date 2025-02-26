@@ -114,6 +114,7 @@ prompt_2_study = PromptTemplate(
     template="""
     사용자의 자기소개서가 {jobObjective}에 적합하지 않음.
     따라서 {jobObjective}에 맞는 실력을 키우기 위한 공부법과 방향을 제공해줘.
+    
     참고할 내용:
     {retrieved_text}
 
@@ -191,9 +192,9 @@ async def resume_pipeline(lorem, jobObjective):
         return {"ability": response_1_text, "resume": response_2, "lorem": lorem, "total_score": total_score}
     
     else:
-        vector_result = competency_db.similarity_search(f"{response_1_text}에 대한 역량을 키우기 위한 방법", k=1)
-        vector_result = vector_result[0].page_content
-        response_2_obj = await (prompt_2_study | model).ainvoke({"jobObjective": jobObjective, "retrieved_text": vector_result})
+        retrieved_text = competency_db.similarity_search(f"{response_1_text}에 대한 역량을 키우기 위한 방법", k=1)
+        retrieved_text = retrieved_text[0].page_content
+        response_2_obj = await (prompt_2_study | model).ainvoke({"jobObjective": jobObjective, "retrieved_text": retrieved_text})
         response_2 = response_2_obj.content
         return {"ability": response_1_text, "study": response_2, "lorem": lorem, "total_score": total_score}
     
