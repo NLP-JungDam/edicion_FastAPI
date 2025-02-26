@@ -193,7 +193,7 @@ async def resume_pipeline(lorem, jobObjective):
     else:
         vector_result = competency_db.similarity_search(f"{response_1_text}에 대한 역량을 키우기 위한 방법", k=1)
         vector_result = vector_result[0].page_content
-        response_2_obj = await (prompt_2_study | model).ainvoke({"jobObjective": jobObjective, "vecotor_result": vector_result})
+        response_2_obj = await (prompt_2_study | model).ainvoke({"jobObjective": jobObjective, "retrieved_text": vector_result})
         response_2 = response_2_obj.content
         return {"ability": response_1_text, "study": response_2, "lorem": lorem, "total_score": total_score}
     
