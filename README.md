@@ -42,4 +42,4 @@ pip와 python 버전 확인하는 법
 Warning이 뜨는 경우
 
 -   pip install -U langchain_chroma langchain_openai
-이후 업데이트에 따라 document 확인해주셔야합니다!
+    이후 업데이트에 따라 document 확인해주셔야합니다!
