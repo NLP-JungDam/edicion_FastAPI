@@ -12,6 +12,9 @@ RAG 방식을 사용한 Model 관련 FastAPI 입니다
 -   cd..
     (원래 환경으로 돌아오기)
 
+-   venv\Scripts\activate.bat
+    (한번에 가상환경 실행하는 방법)
+
 이후부터 원하시는 라이브러리, 모듈 다운로드 후 사용하시면 됩니다.
 
 requirement.txt에 있는 모듈 한번에 다운받기
