@@ -44,11 +44,7 @@ competency_db = Chroma.from_documents(
 
 ability_db = Chroma(persist_directory="./data/", embedding_function=embedding_3small)
 
-base_model = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기본 모델
-model_1 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 적합도 평가
-model_2 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 첨삭 or 공부법 제공
-model_3 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 인재유형 판단 모델
-model_4 = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")  # 기업 인재상과 자기소개서 유사도 평가
+model = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")
 
 # 프롬프트 템플릿 정의 객관성 판단 해야함.
 base_prompt = PromptTemplate(
@@ -114,11 +110,13 @@ prompt_2_resume = PromptTemplate(
 )
 
 prompt_2_study = PromptTemplate(
-    input_variables=["jobObjective"],
+    input_variables=["jobObjective", "retrieved_text"],
     template="""
     사용자의 자기소개서가 {jobObjective}에 적합하지 않음.
     따라서 {jobObjective}에 맞는 실력을 키우기 위한 공부법과 방향을 제공해줘.
-    
+    참고할 내용:
+    {retrieved_text}
+
     추천 공부법:
     """
 )
@@ -154,14 +152,14 @@ prompt_4 = PromptTemplate(
     """
 )
 
-async def process_pipeline(lorem, jobObjective):
-    checkResponse = await (base_prompt | base_model).ainvoke({"lorem" : lorem})
+async def resume_pipeline(lorem, jobObjective):
+    checkResponse = await (base_prompt | model).ainvoke({"lorem" : lorem})
     content = checkResponse.content.strip().replace("%", "")
     checkResponse = int(content)
     if checkResponse <= 80  :
         return { "verify" : False }
     
-    response_1_obj = await (prompt_1 | model_1).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
+    response_1_obj = await (prompt_1 | model).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
     response_1_text = response_1_obj.content
     
     scores = {}
@@ -187,20 +185,20 @@ async def process_pipeline(lorem, jobObjective):
         total_score[cat] = sc
         
     if job_score >= 75:
-        response_2_obj = await (prompt_2_resume | model_2).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
+        response_2_obj = await (prompt_2_resume | model).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
         response_2 = response_2_obj.content
         
         return {"ability": response_1_text, "resume": response_2, "lorem": lorem, "total_score": total_score}
     
     else:
-        response_2_obj = await (prompt_2_study | model_2).ainvoke({"jobObjective": jobObjective})
-        response_2 = response_2_obj.content
         vector_result = competency_db.similarity_search(f"{response_1_text}에 대한 역량을 키우기 위한 방법", k=1)
-        vector_result = "**최종적으로** : " + vector_result[0].page_content
-        return {"ability": response_1_text, "study": response_2 + vector_result, "lorem": lorem, "total_score": total_score}
+        vector_result = vector_result[0].page_content
+        response_2_obj = await (prompt_2_study | model).ainvoke({"jobObjective": jobObjective, "vecotor_result": vector_result})
+        response_2 = response_2_obj.content
+        return {"ability": response_1_text, "study": response_2, "lorem": lorem, "total_score": total_score}
     
 async def talentedType_pipeline(resume) :
-    response_3_obj = await (prompt_3 | model_3).ainvoke({"resume": resume})
+    response_3_obj = await (prompt_3 | model).ainvoke({"resume": resume})
     response_3 = response_3_obj.content
     return { "talentedType" : response_3 }
 
@@ -208,7 +206,7 @@ async def similarity_pipeline(lorem, jobs):
     gpt_scores = {}
 
     for job_id, preferred in jobs.items():
-        response_4_obj = await (prompt_4 | model_4).ainvoke({"lorem": lorem, "preferred": preferred,"job_id":job_id})
+        response_4_obj = await (prompt_4 | model).ainvoke({"lorem": lorem, "preferred": preferred,"job_id":job_id})
         gpt_scores[f"{job_id}"] = float(response_4_obj.content.replace("%", ""))
 
     return gpt_scores
@@ -257,7 +255,7 @@ class PreferrredRequest(BaseModel):
 async def validate_resume(request: ResumeRequest):
     lorem = request.lorem
     jobObjective = request.jobObjective 
-    return await process_pipeline(lorem, jobObjective)
+    return await resume_pipeline(lorem, jobObjective)
 
 @app.post("/user/talentedType")
 async def talentedType(request: TalentedTypeRequest):
