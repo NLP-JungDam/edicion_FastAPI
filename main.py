@@ -46,7 +46,121 @@ ability_db = Chroma(persist_directory="./data/", embedding_function=embedding_3s
 
 model = ChatOpenAI(temperature=0, model_name="gpt-4o-mini-2024-07-18")
 
-# 프롬프트 템플릿 정의 객관성 판단 해야함.
+# 잡코리아, 사람인, 한국 산업인력 공단에서 가져온 직무별 핵심 역량 키워드
+competency_dataset = [
+    {
+        "category": "서비스업",
+        "core_competencies": [
+            "고객 응대", "커뮤니케이션", "문제 해결", "친절함", "스트레스 관리",
+            "서비스 마인드", "감정 조절", "고객 니즈 파악", "상황 대처 능력"
+        ],
+        "keywords": ["고객 만족", "서비스 마인드", "상담", "대인 관계", "응대 기술"],
+        "description": "고객과 직접 대면하며 만족도를 높이기 위한 대인 관계 능력과 문제 해결, 감정 조절 및 고객 니즈 파악이 중요한 분야."
+    },
+    {
+        "category": "제조·화학",
+        "core_competencies": [
+            "생산 공정 관리", "품질 관리", "안전 규정 준수", "기술적 이해", "문제 진단",
+            "설비 운영", "공정 개선", "원가 절감", "환경 관리", "데이터 분석"
+        ],
+        "keywords": ["생산 효율", "품질 보증", "공정 개선", "안전 관리", "화학 지식"],
+        "description": "효율적인 생산과 품질 유지, 안전 및 환경 관리를 통한 공정의 최적화와 원가 절감 능력이 요구되는 분야."
+    },
+    {
+        "category": "IT·웹·통신",
+        "core_competencies": [
+            "프로그래밍", "시스템 설계", "네트워크 관리", "문제 해결", "최신 기술 동향 파악",
+            "데이터 분석", "클라우드 컴퓨팅", "소프트웨어 아키텍처", "보안 인식", "협업 능력", "AI"
+        ],
+        "keywords": ["코딩", "소프트웨어 개발", "데이터베이스", "클라우드", "알고리즘", "보안"],
+        "description": "다양한 프로그래밍 언어와 기술 스택을 활용하여 시스템을 구축·운영하며, 문제 해결 및 협업, 최신 기술 동향 파악 능력이 중요한 분야."
+    },
+    {
+        "category": "은행·금융업",
+        "core_competencies": [
+            "금융 분석", "리스크 관리", "데이터 분석", "고객 상담", "규제 준수",
+            "재무 모델링", "투자 평가", "시장 조사", "의사소통", "윤리 경영"
+        ],
+        "keywords": ["재무 분석", "투자 전략", "금융 상품", "신용 평가", "자산 관리"],
+        "description": "정량적 분석과 고객 관리, 규제 준수를 통한 안정적인 금융 운영과 재무 모델링, 시장 조사 능력이 요구되는 분야."
+    },
+    {
+        "category": "미디어·디자인",
+        "core_competencies": [
+            "창의력", "디자인 툴 활용", "콘텐츠 기획", "트렌드 분석", "커뮤니케이션",
+            "스토리텔링", "브랜드 전략", "비주얼 커뮤니케이션", "프로젝트 관리", "시장 조사"
+        ],
+        "keywords": ["그래픽 디자인", "UX/UI", "영상 편집", "브랜딩", "크리에이티브"],
+        "description": "시각적 표현과 콘텐츠 기획, 최신 트렌드와 브랜드 전략을 통한 창의적 디자인 역량 및 스토리텔링 능력이 핵심인 분야."
+    },
+    {
+        "category": "교육업",
+        "core_competencies": [
+            "교육 기획", "강의 능력", "커뮤니케이션", "멘토링", "학습자 분석",
+            "교육 평가", "문제 해결", "창의적 교수법", "디지털 교육 도구 활용", "조직 운영"
+        ],
+        "keywords": ["교수법", "커리큘럼 개발", "학습 동기 부여", "평가", "피드백"],
+        "description": "효과적인 교육 프로그램 기획과 강의, 학습자 개개인의 이해도를 분석 및 평가하고, 디지털 교육 도구 활용 능력이 중요한 분야."
+    },
+    {
+        "category": "의료·제약·복지",
+        "core_competencies": [
+            "전문 지식", "환자 중심 케어", "윤리 의식", "연구 및 분석", "팀워크",
+            "임상 판단", "문제 해결", "커뮤니케이션", "데이터 해석", "위기 관리"
+        ],
+        "keywords": ["진단", "치료 계획", "약물 관리", "의료 기술", "복지 서비스"],
+        "description": "정밀한 전문 지식을 바탕으로 환자 케어 및 연구, 윤리적 책임과 팀워크, 임상 판단 및 위기 관리 능력이 요구되는 분야."
+    },
+    {
+        "category": "판매·유통",
+        "core_competencies": [
+            "영업 전략", "고객 관리", "협상력", "시장 분석", "재고 관리",
+            "마케팅 전략", "CRM 활용", "커뮤니케이션", "네트워킹"
+        ],
+        "keywords": ["판매 목표", "마케팅", "고객 확보", "CRM", "유통 채널"],
+        "description": "효과적인 영업 전략과 고객 관리, 데이터 분석 및 마케팅 전략 수립을 통해 판매 및 유통 채널을 최적화하는 능력이 중요한 분야."
+    },
+    {
+        "category": "건설업",
+        "core_competencies": [
+            "프로젝트 관리", "현장 운영", "안전 관리", "기술적 전문성", "협업",
+            "계획 수립", "문제 해결", "비용 관리", "리더십", "현장 소통"
+        ],
+        "keywords": ["공사 관리", "건축 설계", "엔지니어링", "현장 안전", "시공 능력"],
+        "description": "프로젝트 관리와 현장 운영, 기술적 전문성, 비용 관리 및 현장 소통을 통한 안전하고 효율적인 건설 수행 능력이 요구되는 분야."
+    },
+    {
+        "category": "기관·협회",
+        "core_competencies": [
+            "정책 이해", "조직 관리", "커뮤니케이션", "네트워킹", "문서 작성",
+            "리더십", "분석적 사고", "전략 기획", "협상력", "대외 협력"
+        ],
+        "keywords": ["행정", "법규 준수", "공공 서비스", "협력", "리더십"],
+        "description": "공공기관이나 협회에서 정책 이해와 조직 관리, 효과적인 커뮤니케이션 및 네트워킹을 통한 전략 기획과 대외 협력 능력이 요구되는 분야."
+    }
+]
+
+def build_category_text(entry):
+    return (
+        f"카테고리: {entry['category']}\n"
+        f"핵심 역량: {', '.join(entry['core_competencies'])}\n"
+        f"키워드: {', '.join(entry['keywords'])}\n"
+        f"설명: {entry['description']}"
+    )
+    
+category_texts = [build_category_text(entry) for entry in competency_dataset]
+    
+def compute_similarity_scores(lorem_text):
+    lorem_embedding = embedding_ada002.embed_query(lorem_text)
+    scores = {}
+    for entry, cat_text in zip(competency_dataset, category_texts):
+        cat_embedding = embedding_ada002.embed_query(cat_text)
+        sim = cosine_similarity([lorem_embedding], [cat_embedding])[0][0]
+        # 코사인 유사도는 [0,1] 범위로 나오므로 100을 곱해 정수 점수로 변환
+        score = int(sim * 100)
+        scores[entry["category"]] = score
+    return scores
+
 base_prompt = PromptTemplate(
     input_variables=["lorem"],
     template="""
@@ -160,9 +274,13 @@ async def resume_pipeline(lorem, jobObjective):
     if checkResponse <= 80  :
         return { "verify" : False }
     
+    vector_scores = compute_similarity_scores(lorem)
+    
     response_1_obj = await (prompt_1 | model).ainvoke({"lorem": lorem, "jobObjective": jobObjective})
     response_1_text = response_1_obj.content
     
+    # jobObjective에 해당하는 점수는 벡터 점수를 우선 사용하도록 예시 처리합니다.
+        
     scores = {}
     for line in response_1_text.splitlines():
         line = line.strip()
@@ -176,9 +294,10 @@ async def resume_pipeline(lorem, jobObjective):
         except ValueError:
             continue
 
+    vector_score = vector_scores.get(jobObjective, 0)
     job_score = scores.get(jobObjective, 0)
     
-    total_score = { jobObjective: job_score }
+    total_score = { jobObjective: (job_score+vector_score)//2 }
     
     other_scores = {cat: sc for cat, sc in scores.items() if cat != jobObjective}
     top2 = sorted(other_scores.items(), key=lambda x: x[1], reverse=True)[:2]
